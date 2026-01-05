@@ -26,20 +26,44 @@ display(GxEPD2_370_GDEY037T03(CS_PIN, DC_PIN, RES_PIN, BUSY_PIN));
 // =====================================================
 // Menü-Zustände
 // =====================================================
-enum MenuItem {
-    MENU_BATTERY,
-    MENU_ZIGBEE,
-    MENU_CO2_CAL,
-    MENU_TEMP_OFFSET,
-    MENU_EXIT,
-    MENU_MAX
+enum SettingsMenuItem {
+    SETTING_MENU_BATTERY,
+    SETTING_MENU_ZIGBEE,
+    SETTING_MENU_REFRESH_MEASUREMENT,
+    SETTING_MENU_DISPLAY_REBUILD,
+    SETTING_MENU_CO2_CAL,
+    SETTING_MENU_TEMP_OFFSET,
+    SETTING_MENU_EXIT,
+    SETTING_MENU_MAX_ROWS_PLACEHOLDER
 };
 
 
-struct configTransferValues {
-  bool boBatteryMode;
-  bool boZigBee;
-  bool boStartCo2Calibration;
+// 
+#define SETTING_MENU_MAX_ROWS 7
+#define SETTING_MENU_ROW_1   40
+#define SETTING_MENU_ROW_2   65
+#define SETTING_MENU_ROW_3   90
+#define SETTING_MENU_ROW_4   115
+#define SETTING_MENU_ROW_5   140
+#define SETTING_MENU_ROW_6   165
+#define SETTING_MENU_ROW_7   190
+
+static const int SETTING_MENU_ROW_Y[SETTING_MENU_MAX_ROWS] = {SETTING_MENU_ROW_1,
+                                                              SETTING_MENU_ROW_2,
+                                                              SETTING_MENU_ROW_3,
+                                                              SETTING_MENU_ROW_4,
+                                                              SETTING_MENU_ROW_5,
+                                                              SETTING_MENU_ROW_6, 
+                                                              SETTING_MENU_ROW_7};
+#define SETTING_MENU_ROW_H 20
+
+
+struct settingsTransferValues {
+  bool  boBatteryMode;
+  bool  boZigBee;
+  int   intMeasurementIntervall;
+  int   intDisplayRebuild;
+  bool  boStartCo2Calibration;
   float fTemperatureOffset;
 };
 
@@ -54,11 +78,8 @@ typedef struct {
 } RtcState;
 RtcState rtcState;
 
-
-MenuItem currentMenu = MENU_BATTERY;
-MenuItem lastMenu = MENU_BATTERY; // global, merkt sich letzten Menüpunkt
+SettingsMenuItem CurrentSettingMenuMode = SETTING_MENU_BATTERY;
 Preferences prefs;
-
 
 
 // =====================================================
@@ -82,7 +103,7 @@ void drawCenteredText(const char* text, int x, int y, int w, int h, const GFXfon
 // =====================================================
 // Statisches Menü zeichnen
 // =====================================================
-void drawStaticMenu()
+void vdrawStaticSettingsMenu()
 {
     display.setFullWindow();
     display.firstPage();
@@ -90,16 +111,18 @@ void drawStaticMenu()
     {
         display.fillScreen(GxEPD_WHITE);
 
-        int width  = display.width();
+        int width = display.width();
 
-        // Überschrift
+        // Header
         drawCenteredText("Settings", 0, 8, width, 24, &FreeMonoBold12pt7b);
 
-        // Menüpunkte
-        drawCenteredText("Battery mode:", 0, 40, width/2, 20, &FreeMonoBold9pt7b);
-        drawCenteredText("Zigbee:", 0, 70, width/2, 20, &FreeMonoBold9pt7b);
-        drawCenteredText("CO2 calibration:", 0, 100, width/2, 20, &FreeMonoBold9pt7b);
-        drawCenteredText("Temp offset:", 0, 130, width/2, 20, &FreeMonoBold9pt7b);
+        // Settingsmenu rows
+        drawCenteredText("Battery mode:",         0, SETTING_MENU_ROW_1, width/2, 20, &FreeMonoBold9pt7b);
+        drawCenteredText("Zigbee:",               0, SETTING_MENU_ROW_2, width/2, 20, &FreeMonoBold9pt7b);
+        drawCenteredText("Measurement cycle:",    0, SETTING_MENU_ROW_3, width/2, 20, &FreeMonoBold9pt7b);
+        drawCenteredText("Screen refresh:",       0, SETTING_MENU_ROW_4, width/2, 20, &FreeMonoBold9pt7b);
+        drawCenteredText("CO2 calibration:",      0, SETTING_MENU_ROW_5, width/2, 20, &FreeMonoBold9pt7b);
+        drawCenteredText("Temp offset:",          0, SETTING_MENU_ROW_6, width/2, 20, &FreeMonoBold9pt7b);
 
     } while(display.nextPage());
 }
@@ -107,94 +130,49 @@ void drawStaticMenu()
 // =====================================================
 // Werte aktualisieren
 // =====================================================
-void updateMenuValues(configTransferValues configMenu, MenuItem actualSelectedMenu)
+void vdrawSettingsMenuRow(settingsTransferValues configMenu, SettingsMenuItem row, bool selected)
 {
-    int width  = display.width();
-  configTransferValues test = configMenu;
-    int highlightY[] = {40, 70, 100, 130};
+    int w = display.width();
+    int y = SETTING_MENU_ROW_Y[row];
 
-    // Batterie Status
-    display.setPartialWindow(width/2, 40, width/2, 20);
+    display.setPartialWindow(w/2, y, w/2, SETTING_MENU_ROW_H);
     display.firstPage();
-    do
-    {
-        display.fillRect(width/2, 40, width/2, 20, GxEPD_WHITE);
-        if (actualSelectedMenu == MENU_BATTERY)
-        {
-          drawCenteredText(configMenu.boBatteryMode ? "Enabled" : "Disabled", width/2, 40, width/2, 20, &FreeMonoBold9pt7b);
-        }
-        else
-        {
-          drawCenteredText(configMenu.boBatteryMode ? "Enabled" : "Disabled", width/2, 40, width/2, 20, &FreeMono9pt7b);
-        }
-    } while(display.nextPage());
+    do {
+        display.fillRect(w/2, y, w/2, SETTING_MENU_ROW_H, GxEPD_WHITE);
 
-    // Zigbee Status
-    display.setPartialWindow(width/2, 70, width/2, 20);
-    display.firstPage();
-    do
-    {
-        display.fillRect(width/2, 70, width/2, 20, GxEPD_WHITE);
-        
-        if (actualSelectedMenu == MENU_ZIGBEE)
-        {
-          drawCenteredText(configMenu.boZigBee ? "Enabled" : "Disabled", width/2, 70, width/2, 20, &FreeMonoBold9pt7b);
-        }
-        else
-        {
-          drawCenteredText(configMenu.boZigBee ? "Enabled" : "Disabled", width/2, 70, width/2, 20, &FreeMono9pt7b);
-        }
-    } while(display.nextPage());
+        const GFXfont* f = selected ? &FreeMonoBold9pt7b : &FreeMono9pt7b;
 
-    // Co2 start measurement
-    display.setPartialWindow(width/2, 100, width/2, 20);
-    display.firstPage();
-    do
-    {
-        display.fillRect(width/2, 100, width/2, 20, GxEPD_WHITE);
-        
-        if (actualSelectedMenu == MENU_CO2_CAL)
+        switch(row)
         {
-          drawCenteredText("Run", width/2, 100, width/2, 20, &FreeMonoBold9pt7b);
-        }
-        else
-        {
-          drawCenteredText("Run", width/2, 100, width/2, 20, &FreeMono9pt7b);
-        }
-    } while(display.nextPage());
+            case SETTING_MENU_BATTERY:
+                drawCenteredText(configMenu.boBatteryMode ? "Enabled" : "Disabled", w/2, y, w/2, SETTING_MENU_ROW_H, f);
+                break;
 
+            case SETTING_MENU_ZIGBEE:
+                drawCenteredText(configMenu.boZigBee ? "Enabled" : "Disabled", w/2, y, w/2, SETTING_MENU_ROW_H, f);
+                break;
 
-    // Temp Offset
-    display.setPartialWindow(width/2, 130, width/2, 20);
-    display.firstPage();
-    do
-    {
-        display.fillRect(width/2, 130, width/2, 20, GxEPD_WHITE);
+            case SETTING_MENU_REFRESH_MEASUREMENT:
+                drawCenteredText(String(configMenu.intMeasurementIntervall).c_str(), w/2, y, w/2, SETTING_MENU_ROW_H, f);
+                break;
 
-        if (actualSelectedMenu == MENU_TEMP_OFFSET)
-        {
-          drawCenteredText((String(configMenu.fTemperatureOffset, 1)).c_str(), width/2, 130, width/2, 20, &FreeMonoBold9pt7b);
-        }
-        else
-        {
-          drawCenteredText((String(configMenu.fTemperatureOffset, 1)).c_str(), width/2, 130, width/2, 20, &FreeMono9pt7b);
-        }
-    } while(display.nextPage());
+            case SETTING_MENU_DISPLAY_REBUILD:
+                drawCenteredText(String(configMenu.intDisplayRebuild).c_str(), w/2, y, w/2, SETTING_MENU_ROW_H, f);
+                break;
 
-    // Exit Setting
-    display.setPartialWindow(width/2, 160, width/2, 20);
-    display.firstPage();
-    do
-    {
-        display.fillRect(width/2, 160, width/2, 20, GxEPD_WHITE);
+            case SETTING_MENU_CO2_CAL:
+                drawCenteredText("Start", w/2, y, w/2, SETTING_MENU_ROW_H, f);
+                break;
 
-        if (actualSelectedMenu == MENU_EXIT)
-        {
-            drawCenteredText("Exit", width/2, 160, width/2, 20, &FreeMonoBold9pt7b);
-        }
-        else
-        {
-            drawCenteredText("Exit", width/2, 160, width/2, 20, &FreeMono9pt7b);
+            case SETTING_MENU_TEMP_OFFSET:
+                drawCenteredText(String(12.0,1).c_str(), w/2, y, w/2, SETTING_MENU_ROW_H, f);
+                break;
+
+            case SETTING_MENU_EXIT:
+                drawCenteredText("Exit", w/2, y, w/2, SETTING_MENU_ROW_H, f);
+                break;
+
+            default: break;
         }
     } while(display.nextPage());
 }
@@ -202,61 +180,186 @@ void updateMenuValues(configTransferValues configMenu, MenuItem actualSelectedMe
 // =====================================================
 // Taster Navigation + Longpress
 // =====================================================
-void handleButton(configTransferValues *configMenu)
+bool bohandleButton(settingsTransferValues *configMenu,
+                  bool *btnWasPressed,
+                  unsigned long *pressStart)
 {
-    static unsigned long lastPress = 0;
-    static unsigned long pressStart = 0;
-    unsigned long now = millis();
-    bool buttonPressed = (digitalRead(BTN_PIN) == HIGH); // Taster gedrückt (Pullup)
+    bool boReturn = false;
 
-    // Navigation bei kurzem Druck
-    if(buttonPressed && pressStart == 0) 
+    static unsigned long lastRepeat = 0;
+
+    unsigned long now = millis();
+    bool buttonPressed = (digitalRead(BTN_PIN) == HIGH);
+
+    //Button pressed again
+    if (buttonPressed && !*btnWasPressed)
     {
-      pressStart = now;
+        *pressStart = now;
+        lastRepeat  = now;
+        *btnWasPressed = true;
     }
 
-    if(!buttonPressed && pressStart != 0)
+    //Button hold
+    if (buttonPressed && *btnWasPressed)
     {
-        unsigned long duration = now - pressStart;
-        pressStart = 0;
+        unsigned long duration = now - *pressStart;
 
-        if(duration < 1000) // kurzer Druck -> weiter
+        //Long press and repeated
+        if (duration >= 2000 && (now - lastRepeat) >= 800)
         {
-            currentMenu = static_cast<MenuItem>((currentMenu + 1) % MENU_MAX);
-        }
-        else if(duration >= 3000) // langer Druck -> Toggle
-        {
-            switch(currentMenu)
+            lastRepeat = now;
+
+            switch (CurrentSettingMenuMode)
             {
-                case MENU_BATTERY:
+                case SETTING_MENU_BATTERY:
                     configMenu->boBatteryMode = !configMenu->boBatteryMode;
                     prefs.begin("system", false);
-                    prefs.putBool("BatteryMode",configMenu->boBatteryMode);
+                    prefs.putBool("BatteryMode", configMenu->boBatteryMode);
                     prefs.end();
+                    vdrawSettingsMenuRow(*configMenu, SETTING_MENU_BATTERY, true);
                     break;
-                case MENU_ZIGBEE:
+
+                case SETTING_MENU_ZIGBEE:
                     configMenu->boZigBee = !configMenu->boZigBee;
                     prefs.begin("system", false);
-                    prefs.putBool("ZigBee",configMenu->boZigBee);
+                    prefs.putBool("ZigBee", configMenu->boZigBee);
                     prefs.end();
+                    vdrawSettingsMenuRow(*configMenu, SETTING_MENU_ZIGBEE, true);
                     break;
-                case MENU_CO2_CAL:
-                    //add co2 calibration menu
-                    break;
-                case MENU_TEMP_OFFSET:
+
+                case SETTING_MENU_REFRESH_MEASUREMENT:
+                    configMenu->intMeasurementIntervall++;
+                    if(configMenu->intMeasurementIntervall > 30)
+                    {
+                        configMenu->intMeasurementIntervall = 1;
+                    }
                     prefs.begin("system", false);
-                    prefs.putFloat("TemperatureOffset", 2.2f);
+                    prefs.putInt("MeasInt", configMenu->intMeasurementIntervall);
                     prefs.end();
+                    vdrawSettingsMenuRow(*configMenu, SETTING_MENU_REFRESH_MEASUREMENT, true);
                     break;
-                case MENU_EXIT:
+
+                case SETTING_MENU_DISPLAY_REBUILD:
+                    configMenu->intDisplayRebuild = configMenu->intDisplayRebuild + 5;
+                    if(configMenu->intDisplayRebuild > 60)
+                    {
+                        configMenu->intDisplayRebuild = 5;
+                    }
+                    prefs.begin("system", false);
+                    prefs.putInt("DispReb", configMenu->intDisplayRebuild);
+                    prefs.end();
+                    vdrawSettingsMenuRow(*configMenu, SETTING_MENU_DISPLAY_REBUILD, true);
                     break;
+
+                case SETTING_MENU_CO2_CAL:
+
+                    break;
+
+                case SETTING_MENU_TEMP_OFFSET:
+                    vdrawSettingsMenuRow(*configMenu, SETTING_MENU_TEMP_OFFSET, true);
+                    break;
+
+                case SETTING_MENU_EXIT:
+                    boReturn = true;
+                    break;
+
                 default:
-                    break; // andere Felder ignorieren langen Druck
+                    break;
             }
-        updateMenuValues(*configMenu, currentMenu);
         }
     }
+
+    //Button released
+    if (!buttonPressed && *btnWasPressed)
+    {
+        unsigned long duration = now - *pressStart;
+
+        //Short press
+        if (duration < 1000)
+        {
+            //Lowlight old row
+            vdrawSettingsMenuRow(*configMenu, CurrentSettingMenuMode, false);
+            //Set new mode
+            CurrentSettingMenuMode = static_cast<SettingsMenuItem>((CurrentSettingMenuMode + 1) % SETTING_MENU_MAX_ROWS);
+            //Highlight new row
+            vdrawSettingsMenuRow(*configMenu, CurrentSettingMenuMode, true);
+        }
+
+        *btnWasPressed = false;
+    }
+    return boReturn;
 }
+
+
+//
+void s_vPrefsHandleFirstRun()
+{
+    if (!rtcState.rtcInitialized)
+    {
+        Serial.println("First run after flash"); //@Todo add debug define here
+        prefs.begin("system", false);
+
+        if (!prefs.getBool("everInitialized", false))
+        {
+            //Note: Do not change the naming or anything otherwise first delete all with:
+            //prefs.begin("system", false); prefs.clear(); prefs.end();
+            prefs.putBool("everInitialized", true);
+            prefs.putBool("BatteryMode", true);
+            prefs.putBool("ZigBee", false);
+            prefs.putInt("MeasInt", 5);
+            prefs.putInt("DispReb", 25);
+        }
+
+        prefs.end();
+        //Set in rtc for cheaper code
+        rtcState.rtcInitialized = true;
+    }
+}
+
+void vExecuteSettingMenu()
+{
+    //Create struct for transfer values
+    settingsTransferValues configMenu;
+
+    //Get values from flash
+    prefs.begin("system", false);
+    configMenu.boBatteryMode         = prefs.getBool("BatteryMode");
+    configMenu.boZigBee              = prefs.getBool("ZigBee");
+    configMenu.intMeasurementIntervall  = prefs.getInt("MeasInt");
+    configMenu.intDisplayRebuild        = prefs.getInt("DispReb");
+    prefs.end();
+    //@Todo add here printf to show values from flash
+
+    //Get values from sensor
+    configMenu.boStartCo2Calibration = false; //@Todo delete
+    configMenu.fTemperatureOffset    = 12.0f; //@ToDo read from sensor
+
+    //Init display
+    //@Todo wrap in func
+    display.init();
+    display.setRotation(1);
+    display.setTextColor(GxEPD_BLACK);
+
+    //Draw static menu headers
+    vdrawStaticSettingsMenu();
+    for (int iRowMenus = 0; iRowMenus < SETTING_MENU_MAX_ROWS; iRowMenus++)
+    {
+        vdrawSettingsMenuRow(configMenu, (SettingsMenuItem)iRowMenus, iRowMenus == CurrentSettingMenuMode);
+    }
+
+    //Values for detecting short and long press
+    bool          boLastPressBtn = false;
+    unsigned long lastPressBtn   = 0;
+    pinMode(BTN_PIN, INPUT_PULLUP);
+
+    /***********************************************
+    *  Execute settings menu
+    ***********************************************/
+    while(!bohandleButton(&configMenu, &boLastPressBtn, &lastPressBtn));
+    //-----------------------------------
+}
+
+
 
 
 // =====================================================
@@ -264,64 +367,11 @@ void handleButton(configTransferValues *configMenu)
 // =====================================================
 void setup()
 {
-    Serial.begin(115200);
-    delay(200);
-    pinMode(BTN_PIN, INPUT_PULLUP);
-
-
-    if (!rtcState.rtcInitialized)
-    {
-      Serial.println("First run after flash");
-        prefs.begin("system", false);
-
-        if (!prefs.getBool("everInitialized", false))
-        {
-            prefs.putBool("everInitialized", true);
-
-            prefs.putBool("BatteryMode", true);
-            prefs.putBool("ZigBee", false);
-
-        }
-
-        prefs.end();
-        rtcState.rtcInitialized = true;
-    }
-
+    //Handle first run
+    s_vPrefsHandleFirstRun();
 
     // Here add menu open
-
-    configTransferValues configMenu;
-
-    prefs.begin("system", false);
-    configMenu.boBatteryMode = prefs.getBool("BatteryMode");
-    configMenu.boZigBee = prefs.getBool("ZigBee");
-    configMenu.boStartCo2Calibration = false;
-    configMenu.fTemperatureOffset = 12.0f; //@ToDo  read from sensor
-    prefs.end();
-    
-    //Print does work
-    Serial.println("Test: "); // Prüfe, was wirklich drin steht
-    Serial.println(configMenu.fTemperatureOffset); // Prüfe, was wirklich drin steht
-
-    display.init();
-    display.setRotation(1);
-    display.setTextColor(GxEPD_BLACK);
-
-    drawStaticMenu();
-    updateMenuValues(configMenu, currentMenu);
-
-    delay(200);
-    while(1)
-    {
-      handleButton(&configMenu);
-
-      if(currentMenu != lastMenu) 
-      {
-          updateMenuValues(configMenu, currentMenu);
-          lastMenu = currentMenu;
-      }
-    }
-
+    vExecuteSettingMenu();
 }
 
 void loop()
